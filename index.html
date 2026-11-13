@@ -29,6 +29,11 @@
   nav.groups a:hover{background:var(--tint)}
   nav.groups a[aria-current="page"]{background:var(--navy);border-color:var(--navy);color:#fff;box-shadow:inset 0 -3px 0 var(--gold)}
   nav.groups a:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+  .refresh-note{margin:14px 0 0;padding:10px 16px;border-radius:6px;font-size:15px;line-height:1.45;background:var(--mid-bg);border:1px solid #f3c27a;border-left:5px solid var(--gold);color:#5c3a00}
+  .refresh-note b{color:#3d2700}
+  .refresh-note.ok{background:var(--good-bg);border-color:#a8d5ba;border-left-color:var(--good);color:#0f5132}
+  .refresh-note button{font:inherit;font-weight:700;font-size:14px;margin-left:6px;padding:3px 12px;border-radius:999px;border:1px solid var(--gold);background:var(--gold);color:var(--navy);cursor:pointer}
+  .refresh-note button:hover{background:var(--gold-2)}
 
   .lede{font-family:var(--head);font-size:22px;font-weight:600;line-height:1.45;color:var(--ink);margin:26px 0 14px;max-width:920px;text-wrap:pretty}
   .lede em{font-style:normal;border-bottom:3px solid var(--gold)}
@@ -148,7 +153,7 @@
   }
   @media print{
     body{background:#fff;font-size:12pt} .wrap{max-width:none;padding:0}
-    .tools,.chev,#refreshStatus,nav.groups,.sparktip,.spark .mk{display:none!important}
+    .tools,.chev,#refreshStatus,nav.groups,.sparktip,.spark .mk,.refresh-note{display:none!important}
     header.top{background:none!important;color:var(--ink);border-radius:0;padding:0 0 12px}
     header.top h1{color:var(--ink)} .asof,.asof b{color:var(--text)}
     .detail{display:block!important} .init{break-inside:avoid}
@@ -178,6 +183,7 @@
     </div>
   </header>
   <nav class="groups" id="groups" aria-label="Department groups"></nav>
+  <div class="refresh-note" id="refreshNote" role="note"></div>
 
   <p class="lede" id="lede"></p>
   <ul class="exec" id="exec" aria-label="Executive summary"></ul>
@@ -1453,6 +1459,7 @@ function sentence(S, F0){
   return a + join + b + ".";
 }
 const unusualZ = u => u.z==null ? Infinity : Math.abs(u.z);
+let REFRESHED_AT = null;          // set after a successful "Refresh data" in this visit
 
 function render(){
   const slug = viewSlug(), G = GROUPS.find(g=>g.slug===slug);
@@ -1466,6 +1473,13 @@ function render(){
   $("#groups").innerHTML = GROUPS.map(g=>`<a href="#${g.slug}"${g.slug===slug?' aria-current="page"':""}>${esc(g.name)}</a>`).join("");
   const asOf = new Date(DATA.generated_at);
   $("#asof").innerHTML = `Data as of <b>${asOf.toLocaleDateString(undefined,{month:"long",day:"numeric",year:"numeric"})}</b>`;
+  // the page does not update itself: ask readers to refresh first, confirm once they have
+  const asOfTxt = asOf.toLocaleDateString(undefined,{month:"long",day:"numeric",year:"numeric"});
+  const note = $("#refreshNote");
+  note.className = "refresh-note" + (REFRESHED_AT ? " ok" : "");
+  note.innerHTML = REFRESHED_AT
+    ? `✓ <b>You are looking at the latest figures</b> – refreshed at ${esc(REFRESHED_AT.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"}))}.`
+    : `<b>Before using this page, <span style="color:#c00000">click “↻ Refresh data”</span></b> to load the latest figures from the City's dashboard – it takes about 20 seconds.<button type="button" id="noteRefresh">↻ Refresh data</button>`;
 
   const impPct = V.scored ? Math.round(100*V.imp/V.scored) : 0, tPct = V.withT ? Math.round(100*V.met/V.withT) : 0;
   $("#lede").innerHTML = `Across ${cards.length} ${cards.length===1?"department":"departments"} and ${NM} measures, <em>${V.imp} of ${V.scored} measures have improved</em> compared with ${F0}. ` +
@@ -1612,7 +1626,8 @@ window.addEventListener("beforeprint", ()=>tipHide(document.activeElement && spa
 const ON_SERVER = location.protocol.startsWith("http") && /\/council(\.html)?\/?$/.test(location.pathname);
 const setStatus = (t, err) => { const s = $("#refreshStatus"); s.textContent = t; s.className = err ? "err" : ""; };
 async function refresh(){
-  const btn = $("#refreshBtn"); btn.disabled = true; btn.textContent = "Refreshing…";
+  const btn = $("#refreshBtn"), nb = $("#noteRefresh"); btn.disabled = true; btn.textContent = "Refreshing…";
+  if (nb){ nb.disabled = true; nb.textContent = "Refreshing…"; }
   try {
     if (ON_SERVER){
       await fetch("/api/refresh", {method:"POST"});
@@ -1627,14 +1642,16 @@ async function refresh(){
       DATA = await Engine.run(DATA, p => setStatus(p.total ? `Checking department pages… ${p.done} of ${p.total}` : "Getting the latest data…"), {});
       try { localStorage.setItem(LS_DATA, JSON.stringify(DATA)); } catch (e) {}
     }
+    REFRESHED_AT = new Date();
     render();
     setStatus("Updated " + new Date().toLocaleTimeString([], {hour:"numeric", minute:"2-digit"}));
   } catch (e) {
     console.error(e);
     setStatus("Could not refresh – showing the previous figures. " + (ON_SERVER ? "" : "Open this file in Chrome or Edge with an internet connection and try again."), true);
-  } finally { btn.disabled = false; btn.textContent = "↻ Refresh data"; }
+  } finally { btn.disabled = false; btn.textContent = "↻ Refresh data"; const nb2 = $("#noteRefresh"); if (nb2){ nb2.disabled = false; nb2.textContent = "↻ Refresh data"; } }
 }
 $("#refreshBtn").addEventListener("click", refresh);
+document.addEventListener("click", e=>{ if (e.target.id === "noteRefresh") refresh(); });
 render();
 </script>
 </body>
